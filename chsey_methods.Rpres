@@ -1,0 +1,316 @@
+Modeling policy interventions
+========================================================
+author: Kyle D Hart
+date: 18 November 2020
+autosize: true
+css: gfx/styles.css
+
+```{r setup, include=FALSE}
+library(trahelyk)
+library(xkcd)
+knitr::opts_chunk$set(echo = FALSE,
+                      warning=FALSE,
+                      fig.width=10)
+```
+
+Agenda
+========================================================
+
+* Intro
+* Some stuff
+* Outro
+
+Panel data 
+========================================================
+```{r}
+intervention <- 274
+set.seed(3894)
+ts_basic <- tibble(day = 150:365) %>%
+  mutate(post = day > intervention,
+         y = 500 + (0.1 * day) + (-80 * post) + (-0.3 * post * (day-274)) + rnorm(n=nrow(.), mean=0, sd=50))
+
+# summary(lm(y ~ day*post, data=ts_ba))
+
+(p <- ggplot(data=ts_basic,
+       aes(x=day, y=y)) +
+  geom_smooth(data=ts_basic %>% filter(day < intervention),
+              method="lm", formula="y ~ x", se=FALSE, alpha=0.4) +
+  geom_smooth(data=ts_basic %>% filter(day > intervention),
+              method="lm", formula="y ~ x", se=FALSE, alpha=0.4) +
+  geom_point(alpha=0.3) +
+  annotate(geom="text",
+           # x = intervention, 
+           x = 274,
+           y = min(ts_basic$y) + 5, 
+           label=" Shock",
+           hjust=0, 
+           family = "xkcd") +
+  geom_vline(xintercept = 274) +
+  scale_y_continuous(name="Outcome") +
+  xkcdaxis(range(ts_basic$day), range(ts_basic$y)))
+
+```
+
+Panel data
+========================================================
+```{r}
+p +
+  annotate(geom="text", family="xkcd",
+             x=274, y=490,
+             label = " Level ",
+             color = "red", lwd=9,
+             hjust=1) +
+  annotate(geom="text", family="xkcd",
+             x=318, y=455,
+             label = "Slope",
+             color = "red", lwd=9,
+             hjust=0.5,
+           angle = -9) 
+```
+
+
+Building Better Worlds | The Weyland-Yutani workplace safety program
+========================================================
+
+* Terraforming workers at the Hadley's Hope colony on exomoon LV-426 sometimes experience serious workplace injuries. 
+* These injuries can lead to expensive claims against the company and delays in the colonization schedule. 
+* On October 1, 2176, the Weyland-Yutani corporation implemented a safety program that included a mandatory 3-hour training workshop and disciplinary measures for workers who don't follow safety protocols. 
+
+
+Research question
+========================================================
+
+> What effect does this policy intervention have on monthly operating costs?  
+
+Some strategies
+========================================================
+
+Increasing level of sophistication:
+
+* Pre/post test
+* Interrupted time series (ITS)
+* Comparative ITS
+* Difference in differences
+
+Pre/post
+========================================================
+
+```{r}
+intervention <- 31
+set.seed(3894)
+hh <- tibble(Date = rep(seq(ymd("2174-01-01"), ymd("2178-12-31"), by="month"), times=2),
+                  month = rep(1:60, times=2)) %>%
+  mutate(grp = rep(c("Hadley's Hope", "Fiorina 161"), each=nrow(.)/2),
+         post = month > intervention,
+         y = 500 + (100 * as.numeric(grp=="Hadley's Hope")) + (3 * month) + 
+           (-25 * as.numeric((grp=="Hadley's Hope" & post))) + 
+           (-2 * post * as.numeric(grp=="Hadley's Hope") * (month-31)) + 
+           rnorm(n=nrow(.), mean=0, sd=20))
+x_rng <- range(hh$month)
+y_rng <- range(hh %>% filter(grp=="Hadley's Hope") %>% pull(y))
+
+hadleys_hope <- hh %>% filter(grp=="Hadley's Hope")
+
+ggplot(data=hadleys_hope,
+       aes(x=month, y=y)) +
+  geom_point(alpha=0.5, size=2.5) +
+  annotate(geom="text",
+           # x = intervention, 
+           x = 31,
+           y = 590, 
+           label=" Month 31: Implement safety program",
+           hjust=0, 
+           family = "xkcd") +
+  geom_vline(xintercept = 31) +
+  scale_y_continuous(name="Monthly operating costs, millions") +
+  scale_x_continuous(breaks=seq(0, 60, 10)) +
+  xkcdaxis(x_rng, y_rng) +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom")
+
+```
+
+
+Pre/post
+========================================================
+```{r}
+xbars <- tibble(x1 = c(1, 32),
+                x2 = c(30, 59),
+                y1 = c(mean(hadleys_hope$y[!hadleys_hope$post]),
+                       mean(hadleys_hope$y[hadleys_hope$post])),
+                y2 = c(mean(hadleys_hope$y[!hadleys_hope$post]),
+                       mean(hadleys_hope$y[hadleys_hope$post])),
+                post = factor(c("Pre", "Post"), levels = c("Pre", "Post")))
+
+ggplot(data=hadleys_hope %>% filter(grp=="Hadley's Hope"),
+       aes(x=month, y=y)) +
+  geom_point(alpha=0.5, size=2.5) +
+  annotate(geom="text",
+           # x = intervention, 
+           x = 274,
+           y = 425, 
+           label=" Safety program",
+           hjust=0, 
+           family = "xkcd") +
+  xkcdline(data = xbars,
+           aes(x=x1, xend=x2,
+               y=y1, yend=y2,
+               colour = post),
+           mask=FALSE) +
+  geom_vline(xintercept = 31) +
+  scale_y_continuous(name="Monthly operating costs, millions") +
+  annotate(geom="text",
+           x = 15, y = xbars$y1[xbars$post=="Pre"] + 7,
+           label = expression(paste(bar(x)[pre], " = 653")),
+           family="xkcd", size=10, color="#00BFC4") + 
+  annotate(geom="text",
+           x = 45, y = xbars$y1[xbars$post=="Post"] + 7,
+           label = expression(paste(bar(x)[post], " = 684")),
+           family="xkcd", size=10, color="#F8766D") + 
+  annotate(geom="text",
+           # x = intervention, 
+           x = 31,
+           y = 590, 
+           label=" Month 31: Implement safety program",
+           hjust=0, 
+           family = "xkcd") +
+  xkcdline(data = xbars,
+           aes(x=31.5, xend=31.5,
+               y=y1, yend=684),
+           mask=FALSE) +
+    annotate(geom="text",
+           x = 32,
+           y = mean(c(xbars$y1[xbars$post=="Pre"], xbars$y1[xbars$post=="Post"])),
+           label= expression(paste(delta, " = 31")),
+           hjust=0, size=10,
+           family = "xkcd") +
+  scale_color_discrete(c("red", "blue")) +
+  xkcdaxis(x_rng, y_rng) +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom") 
+```
+
+Pre/post
+========================================================
+$$
+t = \frac{\bar{X}_{post} - \bar{X}_{pre}}{s \sqrt{\frac{2}{n}}}
+$$
+
+```{r echo=TRUE, results='hold'}
+with(hadleys_hope, t.test(y ~ post))
+```
+
+Pre/post
+========================================================
+
+Equivalently, 
+$$
+Y = \beta_0 + \beta_1 \times POST + \mathbf{\beta_x X} + \varepsilon
+$$
+```{r echo=TRUE}
+summary(lm(y ~ post,
+           data=hadleys_hope))
+```
+
+
+========================================================
+```{r}
+ggplot(data=hh %>% filter(grp=="Hadley's Hope"),
+       aes(x=month, y=y)) +
+  geom_smooth(data=hh %>% filter(grp=="Hadley's Hope" & month < intervention),
+              se=FALSE,
+              method="lm", formula="y ~ x") +
+  geom_smooth(data=hh %>% filter(grp=="Hadley's Hope" & month > intervention), 
+              se=FALSE,
+              method="lm", formula="y ~ x") +
+  geom_point(alpha=0.5) +
+  annotate(geom="text",
+           # x = intervention, 
+           x = 274,
+           y = 425, 
+           label=" Safety program",
+           hjust=0, 
+           family = "xkcd") +
+  # geom_vline(xintercept = ymd("2176-10-01")) +
+  geom_vline(xintercept = 31) +
+  scale_y_continuous(name="Monthly operating costs, millions") +
+  xkcdaxis(x_rng, y_rng) +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom")
+
+```
+
+
+
+Pre-post 
+========================================================
+
+ITS 
+========================================================
+
+
+
+
+CITS 
+========================================================
+
+```{r}
+
+ggplot(data=hh,
+       aes(x=month, y=y)) +
+  geom_smooth(data=hh %>% filter(month < intervention), 
+              aes(group=grp, color=grp),
+              se=FALSE,
+              method="lm", formula="y ~ x") +
+  geom_smooth(data=hh %>% filter(month > intervention), 
+              aes(group=grp, color=grp),
+              se=FALSE,
+              method="lm", formula="y ~ x") +
+  geom_point(aes(group=grp, color=grp), alpha=0.5) +
+  annotate(geom="text",
+           # x = intervention, 
+           x = 274,
+           y = 425, 
+           label=" Safety program",
+           hjust=0, 
+           family = "xkcd") +
+  # geom_vline(xintercept = ymd("2176-10-01")) +
+  geom_vline(xintercept = 31) +
+  scale_y_continuous(name="Monthly operating costs, millions") +
+  xkcdaxis(range(hh$month), range(hh$y)) +
+  theme(legend.title = element_blank(),
+        legend.position = "bottom")
+
+```
+
+
+Diff-in-Diff
+========================================================
+
+Some econometrics
+========================================================
+
+Fixed effects 
+========================================================
+
+Clustered standard errors 
+========================================================
+
+Marginal effects 
+========================================================
+
+Propensity scores 
+========================================================
+ 
+How to speak to an economist
+========================================================
+
+Endogeneity 
+========================================================
+
+Indicators 
+========================================================
+
+Others? 
+========================================================
+
